@@ -1,0 +1,738 @@
+doctype html
+html
+  head
+    meta(charset="utf-8")
+    meta(name="viewport" content="width=device-width, initial-scale=1")
+    title DashStock
+    +script([{name: "lightweight-charts"}])
+    style(type="text/css"): :stylus
+      * { box-sizing: border-box; margin: 0; padding: 0 }
+      html, body
+        height: 100vh; overflow: hidden
+        font-family: system-ui, sans-serif
+        background: #0f1117; color: #e0e0e0
+        display: flex; flex-direction: column
+      .topbar
+        flex-shrink: 0; display: flex; align-items: center; gap: 10px
+        padding: 7px 14px; background: #131722; border-bottom: 1px solid #1e2130
+        min-width: 0
+      .sym-bar
+        display: flex; align-items: center; flex-wrap: nowrap; gap: 5px
+        flex-shrink: 0; max-width: 55%; overflow-x: auto
+      .chip
+        display: inline-flex; align-items: center; gap: 4px
+        padding: 3px 6px 3px 7px; border-radius: 4px; border: 1px solid #333
+        font-size: .82rem; white-space: nowrap; cursor: pointer; flex-shrink: 0
+        transition: opacity .15s
+      .chip.dim { opacity: 0.35 }
+      .chip .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0 }
+      .chip .rm
+        margin-left: 2px; cursor: pointer; color: #555; font-size: .9rem; line-height: 1
+      .chip .rm:hover { color: #e0e0e0 }
+      #sym-input
+        width: 100px; min-width: 60px
+        padding: 4px 8px; background: transparent; border: 1px dashed #333
+        border-radius: 4px; color: #e0e0e0; font-size: .82rem; flex-shrink: 0
+      #sym-input::placeholder { color: #444 }
+      #sym-input:focus { outline: none; border-color: #555 }
+      .divider { width: 1px; height: 22px; background: #2a2e3d; flex-shrink: 0 }
+      .compare-ctrl
+        display: none; align-items: center; gap: 3px; flex-shrink: 0
+      .type-btn
+        padding: 3px 9px; background: #1e2130; border: 1px solid #2a2e3d
+        border-radius: 4px; color: #888; cursor: pointer; font-size: .8rem
+      .type-btn.active { background: #2c6fad; border-color: #2c6fad; color: #fff }
+      #quote
+        display: flex; align-items: center; gap: 10px
+        flex: 1; overflow: hidden; font-size: .83rem; min-width: 0
+      #quote.hidden { display: none }
+      .q-symbol { font-weight: bold; font-size: .92rem; white-space: nowrap }
+      .q-name { color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px }
+      .q-price { font-weight: bold; white-space: nowrap }
+      .q-change { white-space: nowrap }
+      .q-change.up { color: #26a69a }
+      .q-change.down { color: #ef5350 }
+      .q-meta { display: flex; gap: 8px; color: #555; white-space: nowrap }
+      .q-meta span b { color: #999; font-weight: normal }
+      #msg { color: #555; font-size: .8rem; padding: 0 4px; flex-shrink: 0 }
+      .chart-area
+        flex: 1; overflow: hidden; display: flex; flex-direction: column
+        position: relative
+      .chart-area.hidden { display: none }
+      .range-bar
+        position: absolute; top: 8px; left: 12px
+        display: flex; gap: 4px; z-index: 10
+      .range-btn
+        padding: 3px 8px; background: #1e2130; border: 1px solid #2a2e3d
+        border-radius: 4px; color: #888; cursor: pointer; font-size: .78rem
+      .range-btn:hover { color: #e0e0e0; border-color: #555 }
+      .range-btn.active { background: #2c6fad; border-color: #2c6fad; color: #fff }
+      #load-indicator
+        position: absolute; top: 8px; right: 60px
+        font-size: .75rem; color: #555; z-index: 10; display: none
+      .legend
+        position: absolute; top: 8px; right: 12px
+        display: flex; flex-direction: column; gap: 4px; z-index: 10
+      .legend-item
+        display: flex; align-items: center; gap: 5px; font-size: .78rem; color: #888
+      .legend-dot { width: 8px; height: 8px; border-radius: 50% }
+      #chart { flex: 1 }
+      #sym-dropdown
+        display: none; position: fixed; z-index: 200
+        min-width: 240px; background: #1a1f2e; border: 1px solid #2a2e3d
+        border-radius: 6px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.6)
+      #sym-dropdown.show { display: block }
+      .sym-dd-item
+        padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 10px
+        font-size: .82rem
+      .sym-dd-item:hover, .sym-dd-item.active { background: #252b3b }
+      .sym-dd-sym { font-weight: bold; white-space: nowrap; color: #e0e0e0; min-width: 80px }
+      .sym-dd-name { color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+      .sym-dd-type { font-size: .7rem; color: #555; white-space: nowrap; margin-left: auto }
+      #shift-overlay
+        display: none; position: absolute; top: 0; bottom: 0
+        background: rgba(100,150,255,0.1); pointer-events: none; z-index: 5
+        border-left: 1px solid rgba(100,150,255,0.4)
+        border-right: 1px solid rgba(100,150,255,0.4)
+      #shift-result
+        display: none; position: absolute; bottom: 12px
+        left: 50%; transform: translateX(-50%)
+        background: #1a1f2e; border: 1px solid #2a2e3d; border-radius: 6px
+        padding: 8px 14px; z-index: 20; font-size: .8rem; min-width: 150px
+      .shift-res-row
+        display: flex; align-items: center; gap: 8px; padding: 2px 0; white-space: nowrap
+  body
+    .topbar
+      .sym-bar#sym-bar
+        input#sym-input(type="text" placeholder="+代號" autocomplete="off" spellcheck="false")
+      .divider
+      .compare-ctrl#compare-ctrl
+        button.type-btn.active(data-type="%") %
+        button.type-btn(data-type="100") 100
+        .divider
+      #quote.hidden
+        span.q-symbol#sym-text
+        span.q-name#name-text
+        span.q-price#price-text
+        span.q-change#change-text
+        .q-meta
+          span 開 #[b#open-text -]
+          span 高 #[b#high-text -]
+          span 低 #[b#low-text -]
+          span 量 #[b#vol-text -]
+      span#msg
+    .chart-area.hidden
+      .range-bar
+        button.range-btn(data-range="1d") 1D
+        button.range-btn(data-range="5d") 5D
+        button.range-btn(data-range="1mo") 1M
+        button.range-btn.active(data-range="3mo") 3M
+        button.range-btn(data-range="6mo") 6M
+        button.range-btn(data-range="1y") 1Y
+        button.range-btn(data-range="2y") 2Y
+        button.range-btn(data-range="5y") 5Y
+      #load-indicator 載入中...
+      .legend#legend
+      #chart
+      #shift-overlay
+      #shift-result
+    #sym-dropdown
+    script.
+      var COLORS = ['#2196f3','#ff9800','#e91e63','#4caf50','#9c27b0','#00bcd4','#ff5722'];
+
+      function fmt(n) {
+        if (n == null) return '-';
+        return n.toLocaleString('zh-TW', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      }
+      function fmtVol(n) {
+        if (n == null) return '-';
+        if (n > 1e8) return (n / 1e8).toFixed(2) + '億';
+        if (n > 1e4) return (n / 1e4).toFixed(0) + '萬';
+        return n.toLocaleString();
+      }
+      function hexToRgba(hex, alpha) {
+        var r = parseInt(hex.slice(1,3), 16);
+        var g = parseInt(hex.slice(3,5), 16);
+        var b = parseInt(hex.slice(5,7), 16);
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+      }
+
+      // --- state ---
+      var symbols = [];        // [{sym, color}]
+      var currentRange = '3mo';
+      var compareType = '%';   // '%' or '100'
+      var chartInstance = null;
+      var seriesList = [];     // active chart series
+      var candleSeries = null;
+      var dimMap = {};         // sym -> bool (dimmed in compare mode)
+
+      // single-stock lazy load state
+      var allData = [], loadedFrom = null, currentInterval = '1d';
+      var isLoadingMore = false, noMoreHistory = false;
+
+      // compare mode state
+      var cmpDataMap = {};    // sym -> raw data array
+      var cmpBaseMap = {};    // sym -> base close price (fixed at initial load)
+      var cmpFromMap = {};    // sym -> earliest loaded time
+      var cmpNoMoreMap = {};  // sym -> bool
+      var cmpSeriesMap = {};  // sym -> chart series
+      var cmpInterval = '1d';
+      var isLoadingMoreCmp = false;
+
+      // shift-drag range selection state
+      var shiftDragging = false;
+      var shiftStartX = 0, shiftEndX = 0;
+      var shiftPriceLines = {}; // sym -> priceLine (shown while shift is held)
+
+      // --- helpers ---
+      function isCompare() { return symbols.length >= 2; }
+
+      function showLoading(v) {
+        document.getElementById('load-indicator').style.display = v ? 'block' : 'none';
+      }
+
+      function clearSeries() {
+        seriesList.forEach(function(s) { try { chartInstance.removeSeries(s); } catch(e) {} });
+        seriesList = []; candleSeries = null;
+      }
+
+      function saveSyms() {
+        try {
+          localStorage.setItem('dashstock-syms', JSON.stringify(symbols.map(function(s) { return s.sym; })));
+        } catch(e) {}
+      }
+
+      function applyDimStates() {
+        symbols.forEach(function(s) {
+          var series = cmpSeriesMap[s.sym];
+          if (!series) return;
+          if (dimMap[s.sym]) {
+            series.applyOptions({color: hexToRgba(s.color, 0.2), lineWidth: 1});
+          } else {
+            series.applyOptions({color: s.color, lineWidth: 2});
+          }
+        });
+      }
+
+      // --- shift selection ---
+      function clearShiftSelection() {
+        shiftDragging = false;
+        document.getElementById('shift-overlay').style.display = 'none';
+        document.getElementById('shift-result').style.display = 'none';
+      }
+
+      function updateShiftOverlay() {
+        var overlay = document.getElementById('shift-overlay');
+        var left = Math.min(shiftStartX, shiftEndX);
+        var right = Math.max(shiftStartX, shiftEndX);
+        overlay.style.left = left + 'px';
+        overlay.style.width = (right - left) + 'px';
+        overlay.style.display = 'block';
+      }
+
+      function findBarByTime(data, t) {
+        for (var i = 0; i < data.length; i++) {
+          if (data[i].time === t) return data[i];
+        }
+        return null;
+      }
+
+      function appendResultRow(el, sym, color, chg) {
+        var div = document.createElement('div');
+        div.className = 'shift-res-row';
+        var sign = chg >= 0 ? '+' : '';
+        var col = chg >= 0 ? '#26a69a' : '#ef5350';
+        div.innerHTML =
+          '<span class="legend-dot" style="background:' + color + '"></span>' +
+          '<span style="color:#ccc;flex:1">' + sym + '</span>' +
+          '<span style="color:' + col + ';padding-left:16px">' + sign + chg.toFixed(2) + '%</span>';
+        el.appendChild(div);
+      }
+
+      function removeShiftPriceLines() {
+        Object.keys(shiftPriceLines).forEach(function(sym) {
+          var series = cmpSeriesMap[sym];
+          if (series && shiftPriceLines[sym]) {
+            try { series.removePriceLine(shiftPriceLines[sym]); } catch(e) {}
+          }
+        });
+        shiftPriceLines = {};
+      }
+
+      function updateShiftPriceLines(mouseX) {
+        if (!chartInstance || !isCompare() || shiftDragging) return;
+        var logIdx = chartInstance.timeScale().coordinateToLogical(mouseX);
+        if (logIdx == null) return;
+        symbols.forEach(function(s) {
+          var series = cmpSeriesMap[s.sym];
+          if (!series) return;
+          var bar = series.dataByIndex(Math.round(logIdx));
+          if (!bar) return;
+          if (!shiftPriceLines[s.sym]) {
+            shiftPriceLines[s.sym] = series.createPriceLine({
+              price: bar.value,
+              color: dimMap[s.sym] ? hexToRgba(s.color, 0.2) : s.color,
+              lineWidth: 1,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: ''
+            });
+          } else {
+            shiftPriceLines[s.sym].applyOptions({price: bar.value});
+          }
+        });
+      }
+
+      function showShiftResult() {
+        if (!chartInstance) return;
+        var ts = chartInstance.timeScale();
+        var left = Math.min(shiftStartX, shiftEndX);
+        var right = Math.max(shiftStartX, shiftEndX);
+        if (right - left < 5) return;
+        var logLeft = ts.coordinateToLogical(left);
+        var logRight = ts.coordinateToLogical(right);
+        if (logLeft == null || logRight == null) return;
+
+        var resultEl = document.getElementById('shift-result');
+        resultEl.innerHTML = '';
+
+        if (isCompare()) {
+          symbols.forEach(function(s) {
+            var data = cmpDataMap[s.sym];
+            var series = cmpSeriesMap[s.sym];
+            if (!data || !series) return;
+            var startBar = series.dataByIndex(Math.round(logLeft), -1);
+            var endBar   = series.dataByIndex(Math.round(logRight), 1);
+            if (!startBar || !endBar || startBar.time === endBar.time) return;
+            var startRaw = findBarByTime(data, startBar.time);
+            var endRaw   = findBarByTime(data, endBar.time);
+            if (!startRaw || !endRaw || !startRaw.close) return;
+            var chg = (endRaw.close - startRaw.close) / startRaw.close * 100;
+            appendResultRow(resultEl, s.sym, s.color, chg);
+          });
+        } else {
+          if (!allData.length || !candleSeries) return;
+          var startBar = candleSeries.dataByIndex(Math.round(logLeft), -1);
+          var endBar   = candleSeries.dataByIndex(Math.round(logRight), 1);
+          if (!startBar || !endBar || startBar.time === endBar.time) return;
+          var startRaw = findBarByTime(allData, startBar.time);
+          var endRaw   = findBarByTime(allData, endBar.time);
+          if (!startRaw || !endRaw || !startRaw.close) return;
+          var chg = (endRaw.close - startRaw.close) / startRaw.close * 100;
+          appendResultRow(resultEl, symbols[0].sym, symbols[0].color, chg);
+        }
+
+        if (resultEl.children.length) resultEl.style.display = 'block';
+      }
+
+      function initChart() {
+        var el = document.getElementById('chart');
+        chartInstance = LightweightCharts.createChart(el, {
+          autoSize: true,
+          layout: {background: {type:'solid', color:'#0f1117'}, textColor:'#888'},
+          grid: {vertLines:{color:'#161b27'}, horzLines:{color:'#161b27'}},
+          crosshair: {mode: LightweightCharts.CrosshairMode.Normal},
+          rightPriceScale: {borderColor:'#2a2e3d'},
+          timeScale: {borderColor:'#2a2e3d', timeVisible:true}
+        });
+        chartInstance.timeScale().subscribeVisibleLogicalRangeChange(function(range) {
+          if (!range) return;
+          if (range.from < 5) {
+            if (isCompare()) loadMoreCompare();
+            else loadMore();
+          }
+        });
+      }
+
+      // --- single stock ---
+      function loadKLine(sym, range) {
+        clearShiftSelection(); removeShiftPriceLines();
+        noMoreHistory = false; isLoadingMore = false; allData = [];
+        fetch('/api/chart/' + sym + '?range=' + range)
+          .then(function(r) { return r.json(); })
+          .then(function(h) {
+            if (!h.ok || !h.data.length) return;
+            showChart();
+            if (!chartInstance) initChart();
+            clearSeries();
+            document.getElementById('legend').innerHTML = '';
+            candleSeries = chartInstance.addSeries(LightweightCharts.CandlestickSeries, {
+              upColor:'#26a69a', downColor:'#ef5350',
+              borderUpColor:'#26a69a', borderDownColor:'#ef5350',
+              wickUpColor:'#26a69a', wickDownColor:'#ef5350'
+            });
+            seriesList = [candleSeries];
+            currentInterval = h.interval;
+            allData = h.data; loadedFrom = allData[0].time;
+            candleSeries.setData(allData);
+            chartInstance.timeScale().fitContent();
+          });
+      }
+
+      function loadMore() {
+        if (!allData.length || isLoadingMore || noMoreHistory) return;
+        isLoadingMore = true; showLoading(true);
+        var url = '/api/chart/' + symbols[0].sym + '?before=' + loadedFrom + '&interval=' + currentInterval;
+        fetch(url).then(function(r) { return r.json(); })
+          .then(function(h) {
+            isLoadingMore = false; showLoading(false);
+            if (!h.ok || !h.data.length) { noMoreHistory = true; return; }
+            var fresh = h.data.filter(function(r) { return r.time < allData[0].time; });
+            if (!fresh.length) { noMoreHistory = true; return; }
+            allData = fresh.concat(allData);
+            loadedFrom = allData[0].time;
+            candleSeries.setData(allData);
+          })
+          .catch(function() { isLoadingMore = false; showLoading(false); });
+      }
+
+      // --- compare mode ---
+      function normalizeOne(data, base) {
+        return data.map(function(d) {
+          var v = compareType === '%'
+            ? (d.close - base) / base * 100
+            : d.close / base * 100;
+          return {time: d.time, value: v};
+        });
+      }
+
+      function loadCompare() {
+        clearShiftSelection(); removeShiftPriceLines();
+        showChart();
+        if (!chartInstance) initChart();
+        clearSeries();
+        cmpDataMap = {}; cmpBaseMap = {}; cmpFromMap = {}; cmpNoMoreMap = {}; cmpSeriesMap = {};
+        isLoadingMoreCmp = false;
+
+        var promises = symbols.map(function(s) {
+          return fetch('/api/chart/' + s.sym + '?range=' + currentRange)
+            .then(function(r) { return r.json(); })
+            .then(function(h) { return {sym: s.sym, color: s.color, data: h.ok ? h.data : [], interval: h.interval}; });
+        });
+
+        Promise.all(promises).then(function(results) {
+          clearSeries();
+          var legend = document.getElementById('legend');
+          legend.innerHTML = '';
+
+          results.forEach(function(r) {
+            if (!r.data.length) return;
+            var base = r.data[0].close;
+            cmpDataMap[r.sym] = r.data;
+            cmpBaseMap[r.sym] = base;
+            cmpFromMap[r.sym] = r.data[0].time;
+            cmpInterval = r.interval || '1d';
+
+            var series = chartInstance.addSeries(LightweightCharts.LineSeries, {
+              color: r.color, lineWidth: 2,
+              priceFormat: {type:'price', precision:2, minMove:0.01}
+            });
+            series.setData(normalizeOne(r.data, base));
+            seriesList.push(series);
+            cmpSeriesMap[r.sym] = series;
+
+            var item = document.createElement('div');
+            item.className = 'legend-item';
+            item.innerHTML = '<span class="legend-dot" style="background:' + r.color + '"></span>' + r.sym;
+            legend.appendChild(item);
+          });
+
+          applyDimStates();
+          chartInstance.timeScale().fitContent();
+        });
+      }
+
+      function loadMoreCompare() {
+        if (isLoadingMoreCmp) return;
+        var toLoad = symbols.filter(function(s) { return !cmpNoMoreMap[s.sym] && cmpFromMap[s.sym]; });
+        if (!toLoad.length) return;
+        isLoadingMoreCmp = true; showLoading(true);
+
+        Promise.all(toLoad.map(function(s) {
+          var fromTime = cmpFromMap[s.sym];
+          var url = '/api/chart/' + s.sym + '?before=' + fromTime + '&interval=' + cmpInterval;
+          return fetch(url).then(function(r) { return r.json(); })
+            .then(function(h) { return {sym: s.sym, fromTime: fromTime, data: h.ok ? h.data : []}; });
+        })).then(function(results) {
+          results.forEach(function(r) {
+            var fresh = (r.data || []).filter(function(d) { return d.time < r.fromTime; });
+            if (!fresh.length) { cmpNoMoreMap[r.sym] = true; return; }
+            cmpDataMap[r.sym] = fresh.concat(cmpDataMap[r.sym]);
+            cmpFromMap[r.sym] = cmpDataMap[r.sym][0].time;
+            if (cmpSeriesMap[r.sym])
+              cmpSeriesMap[r.sym].setData(normalizeOne(cmpDataMap[r.sym], cmpBaseMap[r.sym]));
+          });
+          applyDimStates();
+          isLoadingMoreCmp = false; showLoading(false);
+        }).catch(function() { isLoadingMoreCmp = false; showLoading(false); });
+      }
+
+      function redrawCompare() {
+        symbols.forEach(function(s) {
+          if (!cmpSeriesMap[s.sym] || !cmpDataMap[s.sym]) return;
+          cmpSeriesMap[s.sym].setData(normalizeOne(cmpDataMap[s.sym], cmpBaseMap[s.sym]));
+        });
+        applyDimStates();
+      }
+
+      // --- quote ---
+      var quoteCache = {};
+
+      function displayQuote(d) {
+        var chg = d.regularMarketChange || 0, chgPct = d.regularMarketChangePercent || 0;
+        var sign = chg >= 0 ? '+' : '';
+        document.getElementById('sym-text').textContent = d.symbol;
+        document.getElementById('name-text').textContent = d.longName || d.shortName || '';
+        document.getElementById('price-text').textContent = fmt(d.regularMarketPrice);
+        var el = document.getElementById('change-text');
+        el.textContent = sign + fmt(chg) + ' (' + sign + chgPct.toFixed(2) + '%)';
+        el.className = 'q-change ' + (chg >= 0 ? 'up' : 'down');
+        document.getElementById('open-text').textContent = fmt(d.regularMarketOpen);
+        document.getElementById('high-text').textContent = fmt(d.regularMarketDayHigh);
+        document.getElementById('low-text').textContent = fmt(d.regularMarketDayLow);
+        document.getElementById('vol-text').textContent = fmtVol(d.regularMarketVolume);
+        document.getElementById('quote').classList.remove('hidden');
+      }
+
+      function loadQuote(sym) {
+        if (!sym) return;
+        if (quoteCache[sym]) { displayQuote(quoteCache[sym]); return; }
+        fetch('/api/quote/' + sym)
+          .then(function(r) { return r.json(); })
+          .then(function(q) {
+            document.getElementById('msg').textContent = '';
+            if (!q.ok) { document.getElementById('msg').textContent = '錯誤: ' + q.error; return; }
+            quoteCache[sym] = q.data;
+            displayQuote(q.data);
+          });
+      }
+
+      function showChart() { document.querySelector('.chart-area').classList.remove('hidden'); }
+
+      // --- chip rendering ---
+      function renderChips() {
+        var bar = document.getElementById('sym-bar');
+        var input = document.getElementById('sym-input');
+        bar.querySelectorAll('.chip').forEach(function(c) { c.remove(); });
+        symbols.forEach(function(s) {
+          var chip = document.createElement('span');
+          chip.className = 'chip' + (dimMap[s.sym] ? ' dim' : '');
+          chip.style.borderColor = s.color;
+          chip.innerHTML =
+            '<span class="dot" style="background:' + s.color + '"></span>' +
+            s.sym +
+            '<span class="rm" data-sym="' + s.sym + '">×</span>';
+          chip.addEventListener('mouseenter', function() { loadQuote(s.sym); });
+          chip.addEventListener('click', function(e) {
+            if (e.target.classList.contains('rm')) return;
+            if (!isCompare()) return;
+            dimMap[s.sym] = !dimMap[s.sym];
+            chip.classList.toggle('dim', !!dimMap[s.sym]);
+            applyDimStates();
+          });
+          bar.insertBefore(chip, input);
+        });
+        bar.querySelectorAll('.chip .rm').forEach(function(el) {
+          el.addEventListener('click', function() { removeSym(el.dataset.sym); });
+        });
+        var ctrl = document.getElementById('compare-ctrl');
+        ctrl.style.display = symbols.length >= 2 ? 'flex' : 'none';
+      }
+
+      function reload() {
+        if (!symbols.length) return;
+        var sym = symbols[symbols.length - 1].sym;
+        loadQuote(sym);
+        if (isCompare()) loadCompare();
+        else loadKLine(symbols[0].sym, currentRange);
+      }
+
+      function addSym(sym) {
+        sym = sym.trim().toUpperCase();
+        if (!sym || symbols.find(function(s) { return s.sym === sym; })) return;
+        symbols.push({sym: sym, color: COLORS[symbols.length % COLORS.length]});
+        renderChips();
+        saveSyms();
+        reload();
+      }
+
+      function removeSym(sym) {
+        symbols = symbols.filter(function(s) { return s.sym !== sym; });
+        delete dimMap[sym];
+        renderChips();
+        saveSyms();
+        if (!symbols.length) {
+          document.getElementById('quote').classList.add('hidden');
+          document.querySelector('.chart-area').classList.add('hidden');
+          document.getElementById('legend').innerHTML = '';
+          return;
+        }
+        reload();
+      }
+
+      // --- search autocomplete ---
+      var searchTimer = null;
+      var ddItems = [];
+      var ddActive = -1;
+
+      function positionDropdown() {
+        var input = document.getElementById('sym-input');
+        var dd = document.getElementById('sym-dropdown');
+        var rect = input.getBoundingClientRect();
+        dd.style.top = (rect.bottom + 4) + 'px';
+        dd.style.left = rect.left + 'px';
+      }
+
+      function renderDropdown(items) {
+        var dd = document.getElementById('sym-dropdown');
+        ddItems = items; ddActive = -1;
+        if (!items.length) { dd.classList.remove('show'); return; }
+        dd.innerHTML = '';
+        items.forEach(function(item, i) {
+          var div = document.createElement('div');
+          div.className = 'sym-dd-item';
+          div.dataset.i = i;
+          div.innerHTML =
+            '<span class="sym-dd-sym">' + item.symbol + '</span>' +
+            '<span class="sym-dd-name">' + (item.name || '') + '</span>' +
+            '<span class="sym-dd-type">' + (item.type === 'ETF' ? 'ETF' : '') + '</span>';
+          div.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            selectDdItem(i);
+          });
+          dd.appendChild(div);
+        });
+        positionDropdown();
+        dd.classList.add('show');
+      }
+
+      function selectDdItem(i) {
+        var item = ddItems[i];
+        if (!item) return;
+        addSym(item.symbol);
+        document.getElementById('sym-input').value = '';
+        document.getElementById('sym-dropdown').classList.remove('show');
+        ddItems = []; ddActive = -1;
+      }
+
+      function updateDdActive(n) {
+        var dd = document.getElementById('sym-dropdown');
+        var els = dd.querySelectorAll('.sym-dd-item');
+        els.forEach(function(el) { el.classList.remove('active'); });
+        ddActive = (n + ddItems.length) % ddItems.length;
+        if (els[ddActive]) els[ddActive].classList.add('active');
+      }
+
+      document.getElementById('sym-input').addEventListener('input', function() {
+        var q = this.value.trim();
+        clearTimeout(searchTimer);
+        if (!q) { document.getElementById('sym-dropdown').classList.remove('show'); ddItems = []; return; }
+        searchTimer = setTimeout(function() {
+          fetch('/api/search?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(function(h) { if (h.ok) renderDropdown(h.data); });
+        }, 250);
+      });
+
+      document.getElementById('sym-input').addEventListener('keydown', function(e) {
+        var dd = document.getElementById('sym-dropdown');
+        if (dd.classList.contains('show') && ddItems.length) {
+          if (e.key === 'ArrowDown') { e.preventDefault(); updateDdActive(ddActive + 1); return; }
+          if (e.key === 'ArrowUp')   { e.preventDefault(); updateDdActive(ddActive - 1); return; }
+          if (e.key === 'Enter' && ddActive >= 0) { e.preventDefault(); selectDdItem(ddActive); return; }
+          if (e.key === 'Escape') { dd.classList.remove('show'); ddItems = []; return; }
+        }
+        if (e.key === 'Enter') {
+          var v = this.value.trim();
+          if (v) { addSym(v); this.value = ''; dd.classList.remove('show'); ddItems = []; }
+        }
+        if (e.key === 'Backspace' && !this.value && symbols.length) {
+          removeSym(symbols[symbols.length - 1].sym);
+        }
+      });
+
+      document.getElementById('sym-input').addEventListener('blur', function() {
+        setTimeout(function() {
+          document.getElementById('sym-dropdown').classList.remove('show');
+        }, 150);
+      });
+
+      document.querySelectorAll('.range-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          currentRange = btn.dataset.range;
+          if (symbols.length) {
+            if (isCompare()) loadCompare();
+            else loadKLine(symbols[0].sym, currentRange);
+          }
+        });
+      });
+
+      document.querySelectorAll('.type-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('.type-btn').forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          compareType = btn.dataset.type;
+          if (isCompare()) redrawCompare();
+        });
+      });
+
+      // --- shift+drag range selection ---
+      var chartEl = document.getElementById('chart');
+
+      chartEl.addEventListener('mousedown', function(e) {
+        if (!e.shiftKey || !chartInstance) return;
+        e.preventDefault();
+        chartInstance.applyOptions({handleScroll: {pressedMouseMove: false}});
+        shiftDragging = true;
+        var rect = chartEl.getBoundingClientRect();
+        shiftStartX = e.clientX - rect.left;
+        shiftEndX = shiftStartX;
+        document.getElementById('shift-result').style.display = 'none';
+        updateShiftOverlay();
+      });
+
+      document.addEventListener('mousemove', function(e) {
+        if (!shiftDragging) return;
+        var rect = chartEl.getBoundingClientRect();
+        shiftEndX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+        updateShiftOverlay();
+      });
+
+      document.addEventListener('mouseup', function(e) {
+        if (!shiftDragging) return;
+        shiftDragging = false;
+        if (chartInstance) chartInstance.applyOptions({handleScroll: {pressedMouseMove: true}});
+        if (Math.abs(shiftEndX - shiftStartX) > 10) {
+          showShiftResult();
+        } else {
+          clearShiftSelection();
+        }
+      });
+
+      chartEl.addEventListener('click', function(e) {
+        if (!e.shiftKey) clearShiftSelection();
+      });
+
+      chartEl.addEventListener('mousemove', function(e) {
+        if (!e.shiftKey || shiftDragging) { removeShiftPriceLines(); return; }
+        var rect = chartEl.getBoundingClientRect();
+        updateShiftPriceLines(e.clientX - rect.left);
+      });
+
+      chartEl.addEventListener('mouseleave', function() {
+        removeShiftPriceLines();
+      });
+
+      document.addEventListener('keyup', function(e) {
+        if (e.key === 'Shift') removeShiftPriceLines();
+      });
+
+      // --- init ---
+      (function() {
+        var saved = [];
+        try { saved = JSON.parse(localStorage.getItem('dashstock-syms') || '[]'); } catch(e) {}
+        if (saved.length) saved.forEach(addSym);
+        else addSym('2330.TW');
+      })();

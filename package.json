@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "start": "lsc server.ls",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -10,6 +11,12 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@plotdb/guides": "github:plotdb/guides#master"
+    "@plotdb/colors": "^0.0.3",
+    "@plotdb/guides": "github:plotdb/guides#master",
+    "@plotdb/srcbuild": "^0.0.70",
+    "express": "^5.2.1",
+    "lightweight-charts": "^5.2.0",
+    "livescript": "^1.6.0",
+    "yahoo-finance2": "^3.15.4"
   }
 }

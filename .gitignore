@@ -3,3 +3,6 @@ secret.*
 *.key
 node_modules
 .DS_Store
+data/
+web/static/
+web/.view/
