@@ -1,3 +1,16 @@
+## v0.3.0
+
+ - features:
+   - 選股集（stock group）管理 UI：可新增、改名、刪除、切換，替代原本的單一 localStorage 清單
+   - shift+drag 漲跌 panel 頂端顯示時間區間，位置由頁底改至圖表上緣
+   - compare mode 往左拉自動連續補載歷史資料（loadMoreCompare 完成後 50ms 自動重觸）
+ - bug fix:
+   - 修正快速切換 range 時舊 loadMoreCompare fetch 回來後污染新資料（generation counter 機制）
+   - 修正 loadMoreCompare merge 時可能有重複時間點造成 lightweight-charts 垂直線（sort + dedup）
+   - 修正刪除後再新增股票顏色重複（改用 pickColor 找未使用顏色）
+   - 修正 normalizeOne 傳入 close <= 0 或 NaN 的無效資料點
+
+
 ## v0.2.0
 
  - features:
