@@ -101,6 +101,10 @@ html
         padding: 8px 14px; z-index: 20; font-size: .8rem; min-width: 150px
       .shift-res-row
         display: flex; align-items: center; gap: 8px; padding: 2px 0; white-space: nowrap
+      #shift-hover-tooltip
+        display: none; position: absolute; pointer-events: none; z-index: 30
+        background: #1a1f2e; border: 1px solid #2a2e3d; border-radius: 6px
+        padding: 6px 10px; font-size: .78rem; min-width: 120px
   body
     .topbar
       .sym-bar#sym-bar
@@ -136,6 +140,7 @@ html
       #chart
       #shift-overlay
       #shift-result
+      #shift-hover-tooltip
     #sym-dropdown
     script.
       var COLORS = ['#2196f3','#ff9800','#e91e63','#4caf50','#9c27b0','#00bcd4','#ff5722'];
@@ -274,13 +279,51 @@ html
               color: dimMap[s.sym] ? hexToRgba(s.color, 0.2) : s.color,
               lineWidth: 1,
               lineStyle: LightweightCharts.LineStyle.Dashed,
-              axisLabelVisible: true,
+              axisLabelVisible: false,
               title: ''
             });
           } else {
             shiftPriceLines[s.sym].applyOptions({price: bar.value});
           }
         });
+      }
+
+      function updateShiftHoverTooltip(mouseX, mouseY) {
+        if (!chartInstance || !isCompare() || shiftDragging) return;
+        var logIdx = chartInstance.timeScale().coordinateToLogical(mouseX);
+        if (logIdx == null) return;
+        var rows = [];
+        symbols.forEach(function(s) {
+          var series = cmpSeriesMap[s.sym];
+          var data = cmpDataMap[s.sym];
+          if (!series || !data) return;
+          var bar = series.dataByIndex(Math.round(logIdx));
+          if (!bar) return;
+          var rawBar = findBarByTime(data, bar.time);
+          if (!rawBar || rawBar.close == null) return;
+          rows.push({sym: s.sym, color: s.color, close: rawBar.close, dim: !!dimMap[s.sym]});
+        });
+        if (!rows.length) return;
+        var tooltip = document.getElementById('shift-hover-tooltip');
+        tooltip.innerHTML = rows.map(function(r) {
+          return '<div class="shift-res-row" style="opacity:' + (r.dim ? 0.4 : 1) + '">' +
+            '<span class="legend-dot" style="background:' + r.color + '"></span>' +
+            '<span style="color:#ccc;flex:1">' + r.sym + '</span>' +
+            '<span style="color:#e0e0e0;padding-left:12px">' + fmt(r.close) + '</span>' +
+            '</div>';
+        }).join('');
+        var chartRect = document.getElementById('chart').getBoundingClientRect();
+        var chartAreaRect = document.querySelector('.chart-area').getBoundingClientRect();
+        var tx = mouseX + 14;
+        if (tx + 160 > chartRect.width) tx = mouseX - 160 - 6;
+        var ty = mouseY - 10;
+        tooltip.style.left = tx + 'px';
+        tooltip.style.top = ty + 'px';
+        tooltip.style.display = 'block';
+      }
+
+      function hideShiftHoverTooltip() {
+        document.getElementById('shift-hover-tooltip').style.display = 'none';
       }
 
       function showShiftResult() {
@@ -399,7 +442,6 @@ html
       function loadCompare() {
         clearShiftSelection(); removeShiftPriceLines();
         showChart();
-        if (!chartInstance) initChart();
         clearSeries();
         cmpDataMap = {}; cmpBaseMap = {}; cmpFromMap = {}; cmpNoMoreMap = {}; cmpSeriesMap = {};
         isLoadingMoreCmp = false;
@@ -411,6 +453,7 @@ html
         });
 
         Promise.all(promises).then(function(results) {
+          if (!chartInstance) initChart();
           clearSeries();
           var legend = document.getElementById('legend');
           legend.innerHTML = '';
@@ -715,24 +758,61 @@ html
         if (!e.shiftKey) clearShiftSelection();
       });
 
-      chartEl.addEventListener('mousemove', function(e) {
-        if (!e.shiftKey || shiftDragging) { removeShiftPriceLines(); return; }
+      chartEl.addEventListener('dblclick', function(e) {
+        if (!chartInstance || !isCompare() || e.shiftKey) return;
         var rect = chartEl.getBoundingClientRect();
-        updateShiftPriceLines(e.clientX - rect.left);
+        var logIdx = chartInstance.timeScale().coordinateToLogical(e.clientX - rect.left);
+        if (logIdx == null) return;
+        var changed = false;
+        symbols.forEach(function(s) {
+          var series = cmpSeriesMap[s.sym];
+          var data = cmpDataMap[s.sym];
+          if (!series || !data) return;
+          var bar = series.dataByIndex(Math.round(logIdx), -1);
+          if (!bar) return;
+          var rawBar = findBarByTime(data, bar.time);
+          if (!rawBar || !rawBar.close) return;
+          cmpBaseMap[s.sym] = rawBar.close;
+          changed = true;
+        });
+        if (changed) redrawCompare();
+      });
+
+      chartEl.addEventListener('mousemove', function(e) {
+        if (!e.shiftKey || shiftDragging) {
+          removeShiftPriceLines();
+          hideShiftHoverTooltip();
+          return;
+        }
+        var rect = chartEl.getBoundingClientRect();
+        var mx = e.clientX - rect.left;
+        var my = e.clientY - rect.top;
+        updateShiftPriceLines(mx);
+        updateShiftHoverTooltip(mx, my);
       });
 
       chartEl.addEventListener('mouseleave', function() {
         removeShiftPriceLines();
+        hideShiftHoverTooltip();
       });
 
       document.addEventListener('keyup', function(e) {
-        if (e.key === 'Shift') removeShiftPriceLines();
+        if (e.key === 'Shift') { removeShiftPriceLines(); hideShiftHoverTooltip(); }
       });
 
       // --- init ---
       (function() {
         var saved = [];
         try { saved = JSON.parse(localStorage.getItem('dashstock-syms') || '[]'); } catch(e) {}
-        if (saved.length) saved.forEach(addSym);
-        else addSym('2330.TW');
+        if (saved.length) {
+          saved.forEach(function(sym) {
+            sym = sym.trim().toUpperCase();
+            if (!sym || symbols.find(function(s) { return s.sym === sym; })) return;
+            symbols.push({sym: sym, color: COLORS[symbols.length % COLORS.length]});
+          });
+          renderChips();
+          if (symbols.length) reload();
+        } else {
+          addSym('2330.TW');
+        }
       })();

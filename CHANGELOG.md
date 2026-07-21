@@ -1,10 +1,14 @@
-## master
+## v0.2.0
 
  - features:
    - localStorage 持久化股票清單，重開頁面自動還原
    - compare mode chip click 切換 dim / active，淡化不關注的 line
    - shift+drag 橫向選取區間，顯示各股漲跌幅
-   - compare mode shift+hover 顯示各 line 虛線跟隨滑鼠位置
+   - compare mode shift+hover 各 line 虛線跟隨滑鼠，tooltip 顯示實際收盤價
+   - compare mode dblclick 重設比較基準點（以點擊處 x 座標為新原點）
+ - bug fix:
+   - 修正多股從 localStorage 還原時只顯示一組的問題（批次 init 改為一次 reload）
+   - 修正 loadCompare 在初始化時同步呼叫 initChart 導致 LightweightCharts 尚未載入的問題
 
 
 ## v0.1.0
