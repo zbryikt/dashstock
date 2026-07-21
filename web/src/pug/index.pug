@@ -95,7 +95,7 @@ html
         border-left: 1px solid rgba(100,150,255,0.4)
         border-right: 1px solid rgba(100,150,255,0.4)
       #shift-result
-        display: none; position: absolute; bottom: 12px
+        display: none; position: absolute; top: 44px
         left: 50%; transform: translateX(-50%)
         background: #1a1f2e; border: 1px solid #2a2e3d; border-radius: 6px
         padding: 8px 14px; z-index: 20; font-size: .8rem; min-width: 150px
@@ -105,8 +105,40 @@ html
         display: none; position: absolute; pointer-events: none; z-index: 30
         background: #1a1f2e; border: 1px solid #2a2e3d; border-radius: 6px
         padding: 6px 10px; font-size: .78rem; min-width: 120px
+      #group-btn
+        padding: 3px 9px; background: #1e2130; border: 1px solid #2a2e3d
+        border-radius: 4px; color: #ccc; cursor: pointer; font-size: .82rem
+        display: flex; align-items: center; gap: 4px; flex-shrink: 0; white-space: nowrap
+      #group-btn:hover { border-color: #555; color: #e0e0e0 }
+      #group-dropdown
+        display: none; position: fixed; z-index: 200; min-width: 200px
+        background: #1a1f2e; border: 1px solid #2a2e3d; border-radius: 6px
+        box-shadow: 0 4px 16px rgba(0,0,0,.6); overflow: hidden
+      #group-dropdown.show { display: block }
+      .group-item
+        padding: 7px 10px; display: flex; align-items: center; gap: 5px
+        font-size: .82rem; cursor: default
+      .group-item:hover { background: #252b3b }
+      .group-item.active { background: #1e2d45 }
+      .group-item-name { flex: 1; color: #e0e0e0; cursor: pointer }
+      .group-item-count { color: #555; font-size: .75rem; white-space: nowrap; cursor: pointer }
+      .group-action-btn
+        padding: 2px 5px; background: transparent; border: none
+        color: #555; cursor: pointer; font-size: .8rem; border-radius: 3px; flex-shrink: 0
+      .group-action-btn:hover { color: #e0e0e0; background: #2a2e3d }
+      .group-action-btn.danger:hover { color: #ef5350 }
+      .group-sep { height: 1px; background: #2a2e3d; margin: 2px 0 }
+      .group-add-btn
+        padding: 7px 10px; color: #888; font-size: .82rem; cursor: pointer
+      .group-add-btn:hover { background: #252b3b; color: #e0e0e0 }
+      .group-name-input
+        flex: 1; background: #0f1117; border: 1px solid #555; border-radius: 3px
+        color: #e0e0e0; padding: 2px 6px; font-size: .82rem
+      .group-name-input:focus { outline: none; border-color: #2c6fad }
   body
     .topbar
+      button#group-btn ▾
+      .divider
       .sym-bar#sym-bar
         input#sym-input(type="text" placeholder="+代號" autocomplete="off" spellcheck="false")
       .divider
@@ -142,12 +174,18 @@ html
       #shift-result
       #shift-hover-tooltip
     #sym-dropdown
+    #group-dropdown
     script.
       var COLORS = ['#2196f3','#ff9800','#e91e63','#4caf50','#9c27b0','#00bcd4','#ff5722'];
 
       function fmt(n) {
         if (n == null) return '-';
         return n.toLocaleString('zh-TW', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      }
+      function fmtBarTime(t) {
+        if (typeof t === 'string') return t.replace(/-/g, '/');
+        var d = new Date(t * 1000);
+        return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
       }
       function fmtVol(n) {
         if (n == null) return '-';
@@ -183,11 +221,17 @@ html
       var cmpSeriesMap = {};  // sym -> chart series
       var cmpInterval = '1d';
       var isLoadingMoreCmp = false;
+      var cmpGeneration = 0;  // incremented on each loadCompare to cancel stale callbacks
 
       // shift-drag range selection state
       var shiftDragging = false;
       var shiftStartX = 0, shiftEndX = 0;
       var shiftPriceLines = {}; // sym -> priceLine (shown while shift is held)
+
+      // group state
+      var groups = [];          // [{id, name, syms}]
+      var currentGroupId = '';
+      var groupDropdownOpen = false;
 
       // --- helpers ---
       function isCompare() { return symbols.length >= 2; }
@@ -201,10 +245,206 @@ html
         seriesList = []; candleSeries = null;
       }
 
-      function saveSyms() {
+      function pickColor() {
+        var used = symbols.map(function(s) { return s.color; });
+        for (var i = 0; i < COLORS.length; i++) {
+          if (used.indexOf(COLORS[i]) === -1) return COLORS[i];
+        }
+        return COLORS[symbols.length % COLORS.length];
+      }
+
+      function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      function genId() {
+        return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+      }
+
+      function saveGroups() {
         try {
-          localStorage.setItem('dashstock-syms', JSON.stringify(symbols.map(function(s) { return s.sym; })));
+          localStorage.setItem('dashstock-groups', JSON.stringify(groups));
+          localStorage.setItem('dashstock-current-group', currentGroupId);
         } catch(e) {}
+      }
+
+      function loadGroups() {
+        try {
+          var raw = localStorage.getItem('dashstock-groups');
+          if (raw) {
+            groups = JSON.parse(raw);
+            var cid = localStorage.getItem('dashstock-current-group') || '';
+            currentGroupId = groups.find(function(g) { return g.id === cid; }) ? cid : groups[0].id;
+            return;
+          }
+          // migrate from dashstock-syms
+          var oldSyms = JSON.parse(localStorage.getItem('dashstock-syms') || '[]');
+          var id = genId();
+          groups = [{id: id, name: '預設', syms: oldSyms.length ? oldSyms : ['0050.TW']}];
+          currentGroupId = id;
+        } catch(e) {}
+        if (!groups.length) {
+          var id = genId();
+          groups = [{id: id, name: '預設', syms: ['0050.TW']}];
+          currentGroupId = id;
+        }
+      }
+
+      function currentGroup() {
+        return groups.find(function(g) { return g.id === currentGroupId; });
+      }
+
+      function syncSymbolsToGroup() {
+        var g = currentGroup();
+        if (g) g.syms = symbols.map(function(s) { return s.sym; });
+        saveGroups();
+      }
+
+      function renderGroupBtn() {
+        var g = currentGroup();
+        document.getElementById('group-btn').textContent = (g ? g.name : '—') + ' ▾';
+      }
+
+      function renderGroupDropdown() {
+        var dd = document.getElementById('group-dropdown');
+        dd.innerHTML = '';
+        groups.forEach(function(g) {
+          var item = document.createElement('div');
+          item.className = 'group-item' + (g.id === currentGroupId ? ' active' : '');
+          item.innerHTML =
+            '<span class="group-item-name">' + escHtml(g.name) + '</span>' +
+            '<span class="group-item-count">(' + g.syms.length + ' 檔)</span>' +
+            '<button class="group-action-btn rename-btn" title="改名">✏</button>' +
+            '<button class="group-action-btn danger delete-btn" title="刪除">🗑</button>';
+          item.querySelector('.group-item-name').addEventListener('click', function() {
+            closeGroupDropdown(); switchGroup(g.id);
+          });
+          item.querySelector('.group-item-count').addEventListener('click', function() {
+            closeGroupDropdown(); switchGroup(g.id);
+          });
+          item.querySelector('.rename-btn').addEventListener('click', function(e) {
+            e.stopPropagation(); showGroupRename(item, g);
+          });
+          item.querySelector('.delete-btn').addEventListener('click', function(e) {
+            e.stopPropagation(); showGroupDeleteConfirm(item, g);
+          });
+          dd.appendChild(item);
+        });
+        var sep = document.createElement('div');
+        sep.className = 'group-sep';
+        dd.appendChild(sep);
+        var addBtn = document.createElement('div');
+        addBtn.className = 'group-add-btn';
+        addBtn.textContent = '+ 新增集合';
+        addBtn.addEventListener('click', function() { showGroupAddInput(dd); });
+        dd.appendChild(addBtn);
+      }
+
+      function showGroupRename(item, g) {
+        item.innerHTML =
+          '<input class="group-name-input" value="' + escHtml(g.name) + '" />' +
+          '<button class="group-action-btn ok-btn">✓</button>' +
+          '<button class="group-action-btn cancel-btn">✗</button>';
+        var input = item.querySelector('.group-name-input');
+        input.focus(); input.select();
+        var commit = function() {
+          var v = input.value.trim();
+          if (v) { g.name = v; saveGroups(); renderGroupBtn(); }
+          renderGroupDropdown();
+        };
+        item.querySelector('.ok-btn').addEventListener('click', commit);
+        item.querySelector('.cancel-btn').addEventListener('click', renderGroupDropdown);
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') renderGroupDropdown();
+        });
+      }
+
+      function showGroupDeleteConfirm(item, g) {
+        if (groups.length <= 1) return;
+        item.innerHTML =
+          '<span style="flex:1;color:#ccc;font-size:.78rem">刪除「' + escHtml(g.name) + '」？</span>' +
+          '<button class="group-action-btn danger ok-btn">確定</button>' +
+          '<button class="group-action-btn cancel-btn">取消</button>';
+        item.querySelector('.ok-btn').addEventListener('click', function() {
+          var wasCurrent = g.id === currentGroupId;
+          groups = groups.filter(function(x) { return x.id !== g.id; });
+          if (wasCurrent) { currentGroupId = groups[0].id; }
+          saveGroups();
+          if (wasCurrent) { switchGroup(currentGroupId); }
+          else { renderGroupBtn(); renderGroupDropdown(); }
+        });
+        item.querySelector('.cancel-btn').addEventListener('click', renderGroupDropdown);
+      }
+
+      function showGroupAddInput(dd) {
+        var addBtn = dd.querySelector('.group-add-btn');
+        if (!addBtn) return;
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:4px;padding:5px 10px;';
+        row.innerHTML =
+          '<input class="group-name-input" placeholder="集合名稱" style="flex:1" />' +
+          '<button class="group-action-btn ok-btn">✓</button>' +
+          '<button class="group-action-btn cancel-btn">✗</button>';
+        addBtn.replaceWith(row);
+        var input = row.querySelector('.group-name-input');
+        input.focus();
+        var commit = function() {
+          var v = input.value.trim();
+          if (!v) { renderGroupDropdown(); return; }
+          var id = genId();
+          groups.push({id: id, name: v, syms: ['0050.TW']});
+          saveGroups();
+          closeGroupDropdown();
+          switchGroup(id);
+        };
+        row.querySelector('.ok-btn').addEventListener('click', commit);
+        row.querySelector('.cancel-btn').addEventListener('click', renderGroupDropdown);
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') renderGroupDropdown();
+        });
+      }
+
+      function openGroupDropdown() {
+        var btn = document.getElementById('group-btn');
+        var dd = document.getElementById('group-dropdown');
+        var rect = btn.getBoundingClientRect();
+        dd.style.top = (rect.bottom + 4) + 'px';
+        dd.style.left = rect.left + 'px';
+        renderGroupDropdown();
+        dd.classList.add('show');
+        groupDropdownOpen = true;
+      }
+
+      function closeGroupDropdown() {
+        document.getElementById('group-dropdown').classList.remove('show');
+        groupDropdownOpen = false;
+      }
+
+      function switchGroup(id) {
+        syncSymbolsToGroup();
+        currentGroupId = id;
+        saveGroups();
+        var g = currentGroup();
+        symbols = []; dimMap = {};
+        clearShiftSelection(); removeShiftPriceLines(); hideShiftHoverTooltip();
+        if (g && g.syms.length) {
+          g.syms.forEach(function(sym) {
+            sym = sym.trim().toUpperCase();
+            if (!sym || symbols.find(function(s) { return s.sym === sym; })) return;
+            symbols.push({sym: sym, color: COLORS[symbols.length % COLORS.length]});
+          });
+        }
+        renderChips();
+        renderGroupBtn();
+        if (symbols.length) reload();
+        else {
+          if (chartInstance) clearSeries();
+          document.getElementById('quote').classList.add('hidden');
+          document.querySelector('.chart-area').classList.add('hidden');
+          document.getElementById('legend').innerHTML = '';
+        }
       }
 
       function applyDimStates() {
@@ -338,6 +578,7 @@ html
 
         var resultEl = document.getElementById('shift-result');
         resultEl.innerHTML = '';
+        var timeStart = null, timeEnd = null;
 
         if (isCompare()) {
           symbols.forEach(function(s) {
@@ -350,6 +591,7 @@ html
             var startRaw = findBarByTime(data, startBar.time);
             var endRaw   = findBarByTime(data, endBar.time);
             if (!startRaw || !endRaw || !startRaw.close) return;
+            if (!timeStart) { timeStart = startBar.time; timeEnd = endBar.time; }
             var chg = (endRaw.close - startRaw.close) / startRaw.close * 100;
             appendResultRow(resultEl, s.sym, s.color, chg);
           });
@@ -361,11 +603,20 @@ html
           var startRaw = findBarByTime(allData, startBar.time);
           var endRaw   = findBarByTime(allData, endBar.time);
           if (!startRaw || !endRaw || !startRaw.close) return;
+          timeStart = startBar.time; timeEnd = endBar.time;
           var chg = (endRaw.close - startRaw.close) / startRaw.close * 100;
           appendResultRow(resultEl, symbols[0].sym, symbols[0].color, chg);
         }
 
-        if (resultEl.children.length) resultEl.style.display = 'block';
+        if (resultEl.children.length) {
+          if (timeStart && timeEnd) {
+            var hdr = document.createElement('div');
+            hdr.style.cssText = 'color:#888;font-size:.73rem;padding-bottom:5px;margin-bottom:5px;border-bottom:1px solid #2a2e3d;white-space:nowrap;text-align:center';
+            hdr.textContent = fmtBarTime(timeStart) + ' – ' + fmtBarTime(timeEnd);
+            resultEl.insertBefore(hdr, resultEl.firstChild);
+          }
+          resultEl.style.display = 'block';
+        }
       }
 
       function initChart() {
@@ -431,12 +682,14 @@ html
 
       // --- compare mode ---
       function normalizeOne(data, base) {
-        return data.map(function(d) {
-          var v = compareType === '%'
-            ? (d.close - base) / base * 100
-            : d.close / base * 100;
-          return {time: d.time, value: v};
-        });
+        return data
+          .filter(function(d) { return d.close != null && d.close > 0 && !isNaN(d.close); })
+          .map(function(d) {
+            var v = compareType === '%'
+              ? (d.close - base) / base * 100
+              : d.close / base * 100;
+            return {time: d.time, value: v};
+          });
       }
 
       function loadCompare() {
@@ -445,6 +698,7 @@ html
         clearSeries();
         cmpDataMap = {}; cmpBaseMap = {}; cmpFromMap = {}; cmpNoMoreMap = {}; cmpSeriesMap = {};
         isLoadingMoreCmp = false;
+        var gen = ++cmpGeneration;
 
         var promises = symbols.map(function(s) {
           return fetch('/api/chart/' + s.sym + '?range=' + currentRange)
@@ -453,6 +707,7 @@ html
         });
 
         Promise.all(promises).then(function(results) {
+          if (gen !== cmpGeneration) return;
           if (!chartInstance) initChart();
           clearSeries();
           var legend = document.getElementById('legend');
@@ -490,6 +745,7 @@ html
         var toLoad = symbols.filter(function(s) { return !cmpNoMoreMap[s.sym] && cmpFromMap[s.sym]; });
         if (!toLoad.length) return;
         isLoadingMoreCmp = true; showLoading(true);
+        var gen = cmpGeneration;
 
         Promise.all(toLoad.map(function(s) {
           var fromTime = cmpFromMap[s.sym];
@@ -497,17 +753,28 @@ html
           return fetch(url).then(function(r) { return r.json(); })
             .then(function(h) { return {sym: s.sym, fromTime: fromTime, data: h.ok ? h.data : []}; });
         })).then(function(results) {
+          if (gen !== cmpGeneration) { isLoadingMoreCmp = false; showLoading(false); return; }
           results.forEach(function(r) {
             var fresh = (r.data || []).filter(function(d) { return d.time < r.fromTime; });
             if (!fresh.length) { cmpNoMoreMap[r.sym] = true; return; }
-            cmpDataMap[r.sym] = fresh.concat(cmpDataMap[r.sym]);
+            var merged = fresh.concat(cmpDataMap[r.sym] || []);
+            merged.sort(function(a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : 0; });
+            merged = merged.filter(function(d, i) { return i === 0 || d.time !== merged[i-1].time; });
+            cmpDataMap[r.sym] = merged;
             cmpFromMap[r.sym] = cmpDataMap[r.sym][0].time;
             if (cmpSeriesMap[r.sym])
               cmpSeriesMap[r.sym].setData(normalizeOne(cmpDataMap[r.sym], cmpBaseMap[r.sym]));
           });
           applyDimStates();
           isLoadingMoreCmp = false; showLoading(false);
-        }).catch(function() { isLoadingMoreCmp = false; showLoading(false); });
+          setTimeout(function() {
+            if (gen !== cmpGeneration || !chartInstance) return;
+            var r = chartInstance.timeScale().getVisibleLogicalRange();
+            if (r && r.from < 5) loadMoreCompare();
+          }, 50);
+        }).catch(function() {
+          if (gen === cmpGeneration) { isLoadingMoreCmp = false; showLoading(false); }
+        });
       }
 
       function redrawCompare() {
@@ -593,9 +860,9 @@ html
       function addSym(sym) {
         sym = sym.trim().toUpperCase();
         if (!sym || symbols.find(function(s) { return s.sym === sym; })) return;
-        symbols.push({sym: sym, color: COLORS[symbols.length % COLORS.length]});
+        symbols.push({sym: sym, color: pickColor()});
         renderChips();
-        saveSyms();
+        syncSymbolsToGroup();
         reload();
       }
 
@@ -603,7 +870,7 @@ html
         symbols = symbols.filter(function(s) { return s.sym !== sym; });
         delete dimMap[sym];
         renderChips();
-        saveSyms();
+        syncSymbolsToGroup();
         if (!symbols.length) {
           document.getElementById('quote').classList.add('hidden');
           document.querySelector('.chart-area').classList.add('hidden');
@@ -800,19 +1067,30 @@ html
         if (e.key === 'Shift') { removeShiftPriceLines(); hideShiftHoverTooltip(); }
       });
 
+      document.getElementById('group-btn').addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (groupDropdownOpen) closeGroupDropdown();
+        else openGroupDropdown();
+      });
+      document.getElementById('group-dropdown').addEventListener('click', function(e) {
+        e.stopPropagation();
+      });
+      document.addEventListener('click', function() {
+        if (groupDropdownOpen) closeGroupDropdown();
+      });
+
       // --- init ---
       (function() {
-        var saved = [];
-        try { saved = JSON.parse(localStorage.getItem('dashstock-syms') || '[]'); } catch(e) {}
-        if (saved.length) {
-          saved.forEach(function(sym) {
+        loadGroups();
+        var g = currentGroup();
+        if (g && g.syms.length) {
+          g.syms.forEach(function(sym) {
             sym = sym.trim().toUpperCase();
             if (!sym || symbols.find(function(s) { return s.sym === sym; })) return;
             symbols.push({sym: sym, color: COLORS[symbols.length % COLORS.length]});
           });
-          renderChips();
-          if (symbols.length) reload();
-        } else {
-          addSym('2330.TW');
         }
+        renderChips();
+        renderGroupBtn();
+        if (symbols.length) reload();
       })();
