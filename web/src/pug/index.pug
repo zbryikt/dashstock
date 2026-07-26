@@ -59,6 +59,11 @@ html
         flex: 1; overflow: hidden; display: flex; flex-direction: column
         position: relative
       .chart-area.hidden { display: none }
+      #no-data
+        display: none; position: absolute; inset: 0
+        align-items: center; justify-content: center
+        color: #333; font-size: 1rem; pointer-events: none; z-index: 5
+      #no-data.show { display: flex }
       .range-bar
         position: absolute; top: 8px; left: 12px
         display: flex; gap: 4px; z-index: 10
@@ -157,7 +162,7 @@ html
           span 低 #[b#low-text -]
           span 量 #[b#vol-text -]
       span#msg
-    .chart-area.hidden
+    .chart-area
       .range-bar
         button.range-btn(data-range="1d") 1D
         button.range-btn(data-range="5d") 5D
@@ -173,6 +178,7 @@ html
       #shift-overlay
       #shift-result
       #shift-hover-tooltip
+      #no-data no data
     #sym-dropdown
     #group-dropdown
     script.
@@ -440,10 +446,10 @@ html
         renderGroupBtn();
         if (symbols.length) reload();
         else {
-          if (chartInstance) clearSeries();
+          clearSeries();
           document.getElementById('quote').classList.add('hidden');
-          document.querySelector('.chart-area').classList.add('hidden');
           document.getElementById('legend').innerHTML = '';
+          showNoData();
         }
       }
 
@@ -645,7 +651,7 @@ html
         fetch('/api/chart/' + sym + '?range=' + range)
           .then(function(r) { return r.json(); })
           .then(function(h) {
-            if (!h.ok || !h.data.length) return;
+            if (!h.ok || !h.data.length) { clearSeries(); showNoData(); return; }
             showChart();
             if (!chartInstance) initChart();
             clearSeries();
@@ -736,7 +742,8 @@ html
           });
 
           applyDimStates();
-          chartInstance.timeScale().fitContent();
+          if (seriesList.length) chartInstance.timeScale().fitContent();
+          else showNoData();
         });
       }
 
@@ -811,13 +818,20 @@ html
           .then(function(r) { return r.json(); })
           .then(function(q) {
             document.getElementById('msg').textContent = '';
-            if (!q.ok) { document.getElementById('msg').textContent = '錯誤: ' + q.error; return; }
+            if (!q.ok || !q.data) { document.getElementById('msg').textContent = q.error ? '錯誤: ' + q.error : ''; return; }
             quoteCache[sym] = q.data;
             displayQuote(q.data);
           });
       }
 
-      function showChart() { document.querySelector('.chart-area').classList.remove('hidden'); }
+      function showChart() {
+        document.querySelector('.chart-area').classList.remove('hidden');
+        document.getElementById('no-data').classList.remove('show');
+      }
+      function showNoData() {
+        document.querySelector('.chart-area').classList.remove('hidden');
+        document.getElementById('no-data').classList.add('show');
+      }
 
       // --- chip rendering ---
       function renderChips() {
@@ -873,8 +887,8 @@ html
         syncSymbolsToGroup();
         if (!symbols.length) {
           document.getElementById('quote').classList.add('hidden');
-          document.querySelector('.chart-area').classList.add('hidden');
           document.getElementById('legend').innerHTML = '';
+          showNoData();
           return;
         }
         reload();
@@ -1093,4 +1107,5 @@ html
         renderChips();
         renderGroupBtn();
         if (symbols.length) reload();
+        else showNoData();
       })();

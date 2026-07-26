@@ -90,7 +90,9 @@ module.exports = ({app}) ->
 
   app.get \/api/quote/:symbol, (req, res) ->
     yf.quote req.params.symbol
-      .then (data) -> res.json {ok: true, data}
+      .then (data) ->
+        if !data => return res.json {ok: false, error: 'symbol not found'}
+        res.json {ok: true, data}
       .catch (e) -> res.status(500).json {ok: false, error: e.message}
 
   app.get \/api/chart/:symbol, (req, res) ->

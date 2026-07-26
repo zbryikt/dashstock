@@ -8,7 +8,7 @@ app.use express.urlencoded {extended: true}
 
 app.use \/, express.static \web/static
 
-port = process.env.PORT or 3000
+port = process.env.PORT or 2975
 
 Promise.resolve!
   .then ->
